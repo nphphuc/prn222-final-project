@@ -1,4 +1,4 @@
-# EduAI (PRN222 - Assignment 2)
+# EduAI (PRN222 - Final Project, cập nhật từ Assignment 2)
 
 Nền tảng web hỗ trợ học tập thông minh: quản lý môn học/tài liệu theo chương, index tài liệu (chunk + embedding) và chatbot RAG hỏi đáp theo nội dung tài liệu.
 

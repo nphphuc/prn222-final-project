@@ -1,0 +1,105 @@
+## =============================================================
+## .gitignore cho ASP.NET Core 8
+## =============================================================
+
+# ---------------------------------------------------------------
+# Build output (bin / obj)
+# Tự sinh ra khi chạy `dotnet build` hoặc `dotnet run`
+# Rất nặng, không cần commit
+# ---------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
+
+# ---------------------------------------------------------------
+# Visual Studio / JetBrains IDE files
+# ---------------------------------------------------------------
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+.idea/
+*.DotSettings.user
+
+# ---------------------------------------------------------------
+# NuGet
+# Packages sẽ được restore tự động bằng `dotnet restore`
+# ---------------------------------------------------------------
+*.nupkg
+*.snupkg
+**/[Pp]ackages/
+!**/[Pp]ackages/build/
+.nuget/
+
+# ---------------------------------------------------------------
+# Sensitive config files - THÔNG TIN NHẠY CẢM
+# Chứa connection string, JWT secret key, v.v.
+# Mỗi developer tạo file này ở local, KHÔNG commit lên Git
+# ---------------------------------------------------------------
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Staging.json
+
+# appsettings.json gốc: có thể bỏ comment dòng dưới nếu
+# muốn dùng biến môi trường / secrets hoàn toàn:
+# appsettings.json
+
+# ---------------------------------------------------------------
+# Log files
+# ---------------------------------------------------------------
+*.log
+logs/
+Logs/
+
+# ---------------------------------------------------------------
+# Publish output
+# ---------------------------------------------------------------
+[Pp]ublish/
+publish/
+PublishProfiles/
+
+# ---------------------------------------------------------------
+# Entity Framework Core - Migrations
+# GIỮ LẠI để cả team dùng chung migration script.
+# Nếu muốn ignore, bỏ comment dòng dưới:
+# **/Migrations/
+# ---------------------------------------------------------------
+
+# ---------------------------------------------------------------
+# Test results
+# ---------------------------------------------------------------
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+TestResult.xml
+*.trx
+*.coverage
+*.coveragexml
+
+# ---------------------------------------------------------------
+# OS generated files
+# ---------------------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ---------------------------------------------------------------
+# Rider / Resharper
+# ---------------------------------------------------------------
+_ReSharper*/
+*.ReSharper
+*.DotSettings
+
+# ---------------------------------------------------------------
+# Docker (nếu sau này thêm)
+# ---------------------------------------------------------------
+.dockerignore
+
+# ---------------------------------------------------------------
+# Environment variables file (nếu dùng dotenv)
+# ---------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+
+ahihi

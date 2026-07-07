@@ -1,0 +1,162 @@
+@page
+@model EduAI.Web.Pages.Benchmarks.IndexModel
+@{
+    ViewData["Title"] = "Benchmarks & Metrics";
+    ViewData["RealtimeEntities"] = "";
+    var jsonOptions = new System.Text.Json.JsonSerializerOptions
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">&#128202; Benchmarks & Metrics</h1>
+        <p class="page-subtitle">Đo lường hiệu năng AI, indexing và thống kê chunks/embeddings.</p>
+    </div>
+    <button type="button" class="btn btn-outline-primary" onclick="refreshMetrics()">
+        &#8635; Làm mới
+    </button>
+</div>
+
+@* ── Summary cards ───────────────────────────────────────────── *@
+<div class="dash-grid mb-4">
+
+    <div class="dash-card featured">
+        <div class="dash-card-icon">&#129302;</div>
+        <h5 id="ai-count">@Model.Data.AiRequestCount</h5>
+        <p>Yêu cầu AI chat</p>
+        @if (Model.Data.AiErrorCount > 0)
+        {
+            <small class="text-danger">@Model.Data.AiErrorCount lỗi</small>
+        }
+    </div>
+
+    <div class="dash-card">
+        <div class="dash-card-icon" style="background:rgba(6,182,212,0.15);color:#0891b2;">&#9201;</div>
+        <h5 id="ai-avg">@Model.Data.AiAvgResponseMs.ToString("F1") ms</h5>
+        <p>Thời gian AI (trung bình)</p>
+        <small class="text-muted">
+            Min: @Model.Data.AiMinResponseMs.ToString("F1") ms
+            · Max: @Model.Data.AiMaxResponseMs.ToString("F1") ms
+        </small>
+    </div>
+
+    <div class="dash-card">
+        <div class="dash-card-icon" style="background:rgba(139,92,246,0.15);color:#7c3aed;">&#9850;</div>
+        <h5 id="embed-count">@Model.Data.EmbeddingCount</h5>
+        <p>Lượt embedding</p>
+        <small class="text-muted">
+            TB: @Model.Data.EmbeddingAvgResponseMs.ToString("F1") ms
+        </small>
+    </div>
+
+    <div class="dash-card">
+        <div class="dash-card-icon" style="background:rgba(22,163,74,0.15);color:#15803d;">&#128190;</div>
+        <h5 id="index-count">@Model.Data.IndexCount</h5>
+        <p>Lượt index tài liệu</p>
+        <small class="text-muted">
+            TB: @Model.Data.IndexAvgDurationMs.ToString("F1") ms
+            · Max: @Model.Data.IndexMaxDurationMs.ToString("F1") ms
+        </small>
+    </div>
+
+    <div class="dash-card">
+        <div class="dash-card-icon" style="background:rgba(217,119,6,0.15);color:#b45309;">&#128196;</div>
+        <h5>@Model.Data.TotalChunks</h5>
+        <p>Chunks (@Model.Data.TotalDocuments tài liệu)</p>
+    </div>
+
+    <div class="dash-card">
+        <div class="dash-card-icon" style="background:rgba(14,165,233,0.15);color:#0284c7;">&#128203;</div>
+        <h5>@Model.Data.TotalEmbeddings</h5>
+        <p>Embeddings (@Model.Data.TotalIndexedDocuments đã index)</p>
+    </div>
+</div>
+
+@* ── Latest operations feed ──────────────────────────────────── *@
+<div class="panel-card">
+    <div class="panel-card-header d-flex justify-content-between align-items-center">
+        <span>&#128337; Hoạt động gần đây</span>
+        <span class="text-muted small" id="live-indicator">
+            <span class="spinner-grow spinner-grow-sm text-success me-1" role="status"></span>Live
+        </span>
+    </div>
+    <div class="panel-card-body p-0">
+        <div class="realtime-feed p-3" id="latest-ops-feed">
+            @if (Model.Data.LatestOperations.Count == 0)
+            {
+                <p class="text-muted mb-0">Chưa có hoạt động nào. Thực hiện chat hoặc upload tài liệu để xem metrics.</p>
+            }
+            else
+            {
+                @foreach (var op in Model.Data.LatestOperations)
+                {
+                    <div class="realtime-event d-flex justify-content-between align-items-start @(op.IsError ? "text-danger" : "")">
+                        <div>
+                            <strong>@op.Operation</strong>
+                            <span class="text-muted ms-2">@op.Detail</span>
+                        </div>
+                        <div class="text-end ms-3" style="min-width:90px;">
+                            <span class="badge @(op.IsError ? "bg-danger" : "bg-primary")">@op.DurationMs.ToString("F1") ms</span>
+                            <div class="small text-muted">@op.Timestamp.ToString("HH:mm:ss")</div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        var metricsData = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Data, jsonOptions));
+
+        function refreshMetrics() {
+            fetch('?handler=Metrics')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    metricsData = data;
+                    updateUI(data);
+                })
+                .catch(function (err) {
+                    console.warn('[Metrics] Refresh failed:', err);
+                });
+        }
+
+        function updateUI(d) {
+            document.getElementById('ai-count').textContent = d.aiRequestCount;
+            document.getElementById('ai-avg').textContent = d.aiAvgResponseMs.toFixed(1) + ' ms';
+            document.getElementById('embed-count').textContent = d.embeddingCount;
+            document.getElementById('index-count').textContent = d.indexCount;
+
+            // Latest operations feed
+            var feed = document.getElementById('latest-ops-feed');
+            if (d.latestOperations && d.latestOperations.length > 0) {
+                var html = '';
+                d.latestOperations.forEach(function (op) {
+                    var cls = op.isError ? 'text-danger' : '';
+                    var badgeCls = op.isError ? 'bg-danger' : 'bg-primary';
+                    html += '<div class="realtime-event d-flex justify-content-between align-items-start ' + cls + '">' +
+                        '<div><strong>' + escapeHtml(op.operation) + '</strong>' +
+                        '<span class="text-muted ms-2">' + escapeHtml(op.detail || '') + '</span></div>' +
+                        '<div class="text-end ms-3" style="min-width:90px;">' +
+                        '<span class="badge ' + badgeCls + '">' + op.durationMs.toFixed(1) + ' ms</span>' +
+                        '<div class="small text-muted">' + new Date(op.timestamp).toLocaleTimeString('vi-VN') + '</div></div></div>';
+                });
+                feed.innerHTML = html;
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            var div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
+        }
+
+        // Auto-refresh every 10 seconds
+        setInterval(refreshMetrics, 10000);
+    </script>
+}

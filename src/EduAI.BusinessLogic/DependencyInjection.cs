@@ -48,6 +48,7 @@ public static class DependencyInjection
         services.AddScoped<IEmbeddingService, EmbeddingService>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<ISystemConfigurationService, SystemConfigurationService>();
+        services.AddScoped<IStatisticsService, StatisticsService>();
 
         return services;
     }

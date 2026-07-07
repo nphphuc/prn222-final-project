@@ -1,0 +1,301 @@
+@page
+@model EduAI.Web.Pages.Statistics.IndexModel
+@{
+    ViewData["Title"] = "Thống kê & Báo cáo";
+    var jsonOptions = new System.Text.Json.JsonSerializerOptions
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">&#128200; Thống kê & Báo cáo</h1>
+        <p class="page-subtitle">Tổng quan hoạt động hệ thống EduAI.</p>
+    </div>
+</div>
+
+@* ── Summary cards ───────────────────────────────────────────── *@
+<div class="dash-grid mb-4">
+
+    <div class="dash-card featured">
+        <div class="dash-card-icon">&#128101;</div>
+        <h5>@Model.Data.TotalUsers</h5>
+        <p>Người dùng (@Model.Data.TotalAdmins Admin · @Model.Data.TotalTeachers GV · @Model.Data.TotalStudents SV)</p>
+    </div>
+
+    <div class="dash-card featured">
+        <div class="dash-card-icon">&#128196;</div>
+        <h5>@Model.Data.TotalDocuments</h5>
+        <p>
+            Tài liệu
+            <span class="text-success ms-1">@Model.Data.DocumentsIndexed đã index</span>
+            @if (Model.Data.DocumentsPending > 0)
+            {
+                <span class="text-warning ms-1">· @Model.Data.DocumentsPending chờ</span>
+            }
+        </p>
+    </div>
+
+    <div class="dash-card featured">
+        <div class="dash-card-icon">&#128172;</div>
+        <h5>@Model.Data.TotalChatSessions</h5>
+        <p>Phiên chat · @Model.Data.TotalChatMessages tin nhắn</p>
+    </div>
+
+    <div class="dash-card featured">
+        <div class="dash-card-icon">&#129302;</div>
+        <h5>@Model.Data.TotalAiRequests</h5>
+        <p>Yêu cầu AI từ chatbot</p>
+    </div>
+
+    <div class="dash-card">
+        <div class="dash-card-icon">&#128190;</div>
+        <h5>@FormatFileSize(Model.Data.TotalFileSizeBytes)</h5>
+        <p>Tổng dung lượng tài liệu</p>
+    </div>
+
+    <div class="dash-card">
+        <div class="dash-card-icon">&#128994;</div>
+        <h5>@Model.Data.ActiveUsers</h5>
+        <p>Tài khoản đang hoạt động</p>
+    </div>
+</div>
+
+<div class="row g-4">
+    @* ── Chart: Registrations over time ──────────────────────────── *@
+    <div class="col-lg-6">
+        <div class="panel-card">
+            <div class="panel-card-header">&#128200; Đăng ký người dùng (30 ngày)</div>
+            <div class="panel-card-body">
+                <canvas id="chartRegistrations" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    @* ── Chart: Document uploads over time ────────────────────────── *@
+    <div class="col-lg-6">
+        <div class="panel-card">
+            <div class="panel-card-header">&#128196; Upload tài liệu (30 ngày)</div>
+            <div class="panel-card-body">
+                <canvas id="chartUploads" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    @* ── Chart: AI requests over time ─────────────────────────────── *@
+    <div class="col-lg-6">
+        <div class="panel-card">
+            <div class="panel-card-header">&#129302; Yêu cầu AI (30 ngày)</div>
+            <div class="panel-card-body">
+                <canvas id="chartAiRequests" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    @* ── Chart: Chat messages over time ───────────────────────────── *@
+    <div class="col-lg-6">
+        <div class="panel-card">
+            <div class="panel-card-header">&#128172; Tin nhắn chat (30 ngày)</div>
+            <div class="panel-card-body">
+                <canvas id="chartChatMessages" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    @* ── Chart: Documents by category (doughnut) ──────────────────── *@
+    <div class="col-md-4">
+        <div class="panel-card">
+            <div class="panel-card-header">&#128213; Tài liệu theo loại</div>
+            <div class="panel-card-body">
+                <canvas id="chartDocCategory" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    @* ── Chart: Messages by role (doughnut) ───────────────────────── *@
+    <div class="col-md-4">
+        <div class="panel-card">
+            <div class="panel-card-header">&#128172; Tin nhắn chat</div>
+            <div class="panel-card-body">
+                <canvas id="chartMessages" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    @* ── Chart: Top actions (bar) ─────────────────────────────────── *@
+    <div class="col-md-4">
+        <div class="panel-card">
+            <div class="panel-card-header">&#128270; Top hành động</div>
+            <div class="panel-card-body">
+                <canvas id="chartTopActions" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+@functions {
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.#} KB";
+        return $"{bytes / (1024.0 * 1024.0):0.#} MB";
+    }
+}
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
+            crossorigin="anonymous"></script>
+    <script>
+        (function () {
+            const colors = {
+                blue: '#0ea5e9',
+                teal: '#06b6d4',
+                green: '#16a34a',
+                amber: '#d97706',
+                red: '#dc2626',
+                purple: '#8b5cf6',
+                surface: '#eef8ff',
+                muted: '#94a3b8'
+            };
+
+            function timeSeriesConfig(canvasId, data, label, color) {
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                const labels = data.map(p => {
+                    const d = new Date(p.date);
+                    return d.toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit' });
+                });
+                const values = data.map(p => p.count);
+
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label,
+                            data: values,
+                            borderColor: color,
+                            backgroundColor: (ctx) => {
+                                const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 200);
+                                g.addColorStop(0, color + '40');
+                                g.addColorStop(1, color + '05');
+                                return g;
+                            },
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 3,
+                            pointBackgroundColor: color,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { stepSize: 1, color: colors.muted },
+                                grid: { color: '#e2e8f0' }
+                            },
+                            x: {
+                                ticks: { maxTicksLimit: 15, color: colors.muted },
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+            }
+
+            function doughnutConfig(canvasId, data, colorsList) {
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.map(d => d.label),
+                        datasets: [{
+                            data: data.map(d => d.count),
+                            backgroundColor: colorsList || [
+                                '#0ea5e9', '#06b6d4', '#16a34a', '#d97706',
+                                '#8b5cf6', '#ec4899', '#f97316', '#64748b'
+                            ],
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { boxWidth: 12, padding: 8, color: '#0f3d5c' }
+                            }
+                        },
+                        cutout: '55%'
+                    }
+                });
+            }
+
+            function barConfig(canvasId, data, label, color) {
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.map(d => d.label.length > 18 ? d.label.slice(0, 16) + '..' : d.label),
+                        datasets: [{
+                            label,
+                            data: data.map(d => d.count),
+                            backgroundColor: color || colors.blue,
+                            borderRadius: 4,
+                            borderSkipped: false
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: {
+                                beginAtZero: true,
+                                ticks: { stepSize: 1, color: colors.muted },
+                                grid: { color: '#e2e8f0' }
+                            },
+                            y: {
+                                ticks: { color: colors.muted },
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // ── Render all charts ────────────────────────────────
+            const data = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Data, jsonOptions));
+
+            timeSeriesConfig('chartRegistrations', data.dailyUserRegistrations, 'Đăng ký', colors.blue);
+            timeSeriesConfig('chartUploads', data.dailyDocumentUploads, 'Upload', colors.teal);
+            timeSeriesConfig('chartAiRequests', data.dailyAiRequests, 'AI requests', colors.green);
+            timeSeriesConfig('chartChatMessages', data.dailyChatMessages, 'Tin nhắn', colors.amber);
+
+            doughnutConfig('chartDocCategory', data.documentsByCategory);
+            doughnutConfig('chartMessages', data.messagesByRole);
+
+            barConfig('chartTopActions', data.topActions, 'Lượt', colors.purple);
+        })();
+    </script>
+}

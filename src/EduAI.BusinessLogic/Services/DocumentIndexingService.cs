@@ -15,17 +15,20 @@ public sealed class DocumentIndexingService : IDocumentIndexingService
     private readonly IGeminiAiService _geminiAiService;
     private readonly INotificationService _notificationService;
     private readonly ISystemConfigurationService _systemConfigurationService;
+    private readonly MetricsCollector _metrics;
 
     public DocumentIndexingService(
         IUnitOfWork unitOfWork,
         IGeminiAiService geminiAiService,
         INotificationService notificationService,
-        ISystemConfigurationService systemConfigurationService)
+        ISystemConfigurationService systemConfigurationService,
+        MetricsCollector metrics)
     {
         _unitOfWork = unitOfWork;
         _geminiAiService = geminiAiService;
         _notificationService = notificationService;
         _systemConfigurationService = systemConfigurationService;
+        _metrics = metrics;
     }
 
     public async Task IndexAsync(int documentId, string? ipAddress, CancellationToken cancellationToken = default)
@@ -44,6 +47,9 @@ public sealed class DocumentIndexingService : IDocumentIndexingService
         await SetStatusAsync(document, DocumentIndexStatus.Processing, null);
         await NotifyProgressAsync(documentId, "Started", new { status = "Processing", chunkCount = 0, embedded = 0 });
 
+        var sw = ValueStopwatch.StartNew();
+        int processedChunks = 0;
+
         try
         {
             // Idempotent: clear any partial/previous index so a re-queue (e.g. after a restart)
@@ -55,6 +61,7 @@ public sealed class DocumentIndexingService : IDocumentIndexingService
             {
                 chunkCount = await CreateChunksAsync(document, readStream, cancellationToken);
             }
+            processedChunks = chunkCount;
 
             await NotifyProgressAsync(documentId, "ChunksCreated", new { status = "Processing", chunkCount, embedded = 0 });
 
@@ -90,6 +97,16 @@ public sealed class DocumentIndexingService : IDocumentIndexingService
                 embedded,
                 processedAt = DateTime.UtcNow
             });
+
+            var elapsedMs = sw.GetElapsedMs();
+            _metrics.RecordIndex(elapsedMs);
+            _metrics.AddLatestOperation(new LatestOperationDto
+            {
+                Operation = "Document Index",
+                Detail = $"Document '{document.FileName}' (Id: {document.Id}), {chunkCount} chunks, {embedded} embeddings",
+                DurationMs = Math.Round(elapsedMs, 1),
+                Timestamp = DateTime.UtcNow
+            });
         }
         catch (OperationCanceledException)
         {
@@ -100,6 +117,16 @@ public sealed class DocumentIndexingService : IDocumentIndexingService
         {
             await SetStatusAsync(document, DocumentIndexStatus.Failed, ex.Message);
             await NotifyProgressAsync(documentId, "Failed", new { status = "Failed", error = ex.Message });
+
+            var elapsedMs = sw.GetElapsedMs();
+            _metrics.AddLatestOperation(new LatestOperationDto
+            {
+                Operation = "Document Index",
+                Detail = $"Failed for '{document.FileName}': {ex.Message}",
+                DurationMs = Math.Round(elapsedMs, 1),
+                Timestamp = DateTime.UtcNow,
+                IsError = true
+            });
         }
     }
 

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using EduAI.Model.DTOs;
+using EduAI.BusinessLogic.Helpers;
 using EduAI.BusinessLogic.IService;
 using EduAI.Model.Settings;
 using Microsoft.Extensions.Logging;
@@ -14,45 +15,75 @@ public class GeminiAiService : IGeminiAiService
     private readonly HttpClient _httpClient;
     private readonly GeminiSettings _settings;
     private readonly ILogger<GeminiAiService> _logger;
+    private readonly MetricsCollector _metrics;
 
     public GeminiAiService(
         HttpClient httpClient,
         IOptions<GeminiSettings> settings,
-        ILogger<GeminiAiService> logger)
+        ILogger<GeminiAiService> logger,
+        MetricsCollector metrics)
     {
         _httpClient = httpClient;
         _settings = settings.Value;
         _logger = logger;
+        _metrics = metrics;
     }
 
     public async Task<float[]> EmbedTextAsync(string text, CancellationToken cancellationToken = default)
     {
-        var url = $"models/{_settings.EmbeddingModel}:embedContent";
-        var payload = new
+        var sw = ValueStopwatch.StartNew();
+        try
         {
-            model = $"models/{_settings.EmbeddingModel}",
-            content = new
+            var url = $"models/{_settings.EmbeddingModel}:embedContent";
+            var payload = new
             {
-                parts = new[] { new { text } }
+                model = $"models/{_settings.EmbeddingModel}",
+                content = new
+                {
+                    parts = new[] { new { text } }
+                }
+            };
+
+            using var request = CreateRequest(HttpMethod.Post, url, payload);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Gemini embed failed ({StatusCode}): {Body}", response.StatusCode, body);
+                throw new InvalidOperationException("Gemini embedding request failed.");
             }
-        };
 
-        using var request = CreateRequest(HttpMethod.Post, url, payload);
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var parsed = JsonSerializer.Deserialize<EmbedContentResponse>(body);
+            var values = parsed?.Embedding?.Values;
+            if (values is not { Count: > 0 })
+                throw new InvalidOperationException("Gemini embedding response was empty.");
 
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogError("Gemini embed failed ({StatusCode}): {Body}", response.StatusCode, body);
-            throw new InvalidOperationException("Gemini embedding request failed.");
+            var elapsedMs = sw.GetElapsedMs();
+            _metrics.RecordEmbedding(elapsedMs);
+            _metrics.AddLatestOperation(new LatestOperationDto
+            {
+                Operation = "Embedding",
+                Detail = $"Model: {_settings.EmbeddingModel}, text length: {text.Length}",
+                DurationMs = Math.Round(elapsedMs, 1),
+                Timestamp = DateTime.UtcNow
+            });
+
+            return values.ToArray();
         }
-
-        var parsed = JsonSerializer.Deserialize<EmbedContentResponse>(body);
-        var values = parsed?.Embedding?.Values;
-        if (values is not { Count: > 0 })
-            throw new InvalidOperationException("Gemini embedding response was empty.");
-
-        return values.ToArray();
+        catch
+        {
+            var elapsedMs = sw.GetElapsedMs();
+            _metrics.AddLatestOperation(new LatestOperationDto
+            {
+                Operation = "Embedding",
+                Detail = "Failed",
+                DurationMs = Math.Round(elapsedMs, 1),
+                Timestamp = DateTime.UtcNow,
+                IsError = true
+            });
+            throw;
+        }
     }
 
     public async Task<string> GenerateAnswerAsync(
@@ -62,67 +93,95 @@ public class GeminiAiService : IGeminiAiService
         IReadOnlyList<ChatHistoryItemDto>? history = null,
         CancellationToken cancellationToken = default)
     {
-        var url = $"models/{_settings.ChatModel}:generateContent";
-        var systemPrompt = string.IsNullOrWhiteSpace(_settings.SystemPrompt)
-            ? "You are an educational assistant. Answer only from the provided materials."
-            : _settings.SystemPrompt;
-
-        var userPrompt =
-            $"Subject: {subjectName}\n\n" +
-            $"Authorized materials:\n{context}\n\n" +
-            $"Student question: {question}";
-
-        var contents = new List<object>();
-        if (history != null)
+        var sw = ValueStopwatch.StartNew();
+        try
         {
-            foreach (var item in history)
+            var url = $"models/{_settings.ChatModel}:generateContent";
+            var systemPrompt = string.IsNullOrWhiteSpace(_settings.SystemPrompt)
+                ? "You are an educational assistant. Answer only from the provided materials."
+                : _settings.SystemPrompt;
+
+            var userPrompt =
+                $"Subject: {subjectName}\n\n" +
+                $"Authorized materials:\n{context}\n\n" +
+                $"Student question: {question}";
+
+            var contents = new List<object>();
+            if (history != null)
             {
-                var role = item.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) ? "model" : "user";
-                contents.Add(new
+                foreach (var item in history)
                 {
-                    role,
-                    parts = new[] { new { text = item.Content } }
-                });
+                    var role = item.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) ? "model" : "user";
+                    contents.Add(new
+                    {
+                        role,
+                        parts = new[] { new { text = item.Content } }
+                    });
+                }
             }
-        }
 
-        contents.Add(new
-        {
-            role = "user",
-            parts = new[] { new { text = userPrompt } }
-        });
-
-        var payload = new
-        {
-            systemInstruction = new
+            contents.Add(new
             {
-                parts = new[] { new { text = systemPrompt } }
-            },
-            contents
-        };
+                role = "user",
+                parts = new[] { new { text = userPrompt } }
+            });
 
-        using var request = CreateRequest(HttpMethod.Post, url, payload);
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var payload = new
+            {
+                systemInstruction = new
+                {
+                    parts = new[] { new { text = systemPrompt } }
+                },
+                contents
+            };
 
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogError("Gemini generate failed ({StatusCode}): {Body}", response.StatusCode, body);
-            throw new InvalidOperationException("Gemini chat request failed.");
+            using var request = CreateRequest(HttpMethod.Post, url, payload);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Gemini generate failed ({StatusCode}): {Body}", response.StatusCode, body);
+                throw new InvalidOperationException("Gemini chat request failed.");
+            }
+
+            var parsed = JsonSerializer.Deserialize<GenerateContentResponse>(body);
+            var answer = parsed?.Candidates?
+                .FirstOrDefault()?
+                .Content?
+                .Parts?
+                .Select(p => p.Text)
+                .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t));
+
+            if (string.IsNullOrWhiteSpace(answer))
+                throw new InvalidOperationException("Gemini returned an empty answer.");
+
+            var elapsedMs = sw.GetElapsedMs();
+            _metrics.RecordAiResponse(elapsedMs);
+            _metrics.AddLatestOperation(new LatestOperationDto
+            {
+                Operation = "AI Chat",
+                Detail = $"Subject: {subjectName}, question length: {question.Length}",
+                DurationMs = Math.Round(elapsedMs, 1),
+                Timestamp = DateTime.UtcNow
+            });
+
+            return answer.Trim();
         }
-
-        var parsed = JsonSerializer.Deserialize<GenerateContentResponse>(body);
-        var answer = parsed?.Candidates?
-            .FirstOrDefault()?
-            .Content?
-            .Parts?
-            .Select(p => p.Text)
-            .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t));
-
-        if (string.IsNullOrWhiteSpace(answer))
-            throw new InvalidOperationException("Gemini returned an empty answer.");
-
-        return answer.Trim();
+        catch
+        {
+            _metrics.RecordAiError();
+            var elapsedMs = sw.GetElapsedMs();
+            _metrics.AddLatestOperation(new LatestOperationDto
+            {
+                Operation = "AI Chat",
+                Detail = "Failed",
+                DurationMs = Math.Round(elapsedMs, 1),
+                Timestamp = DateTime.UtcNow,
+                IsError = true
+            });
+            throw;
+        }
     }
     // dùng để gọi API key và tạo request gửi lên server của google để lấy embedding và generate content
     private HttpRequestMessage CreateRequest(HttpMethod method, string relativeUrl, object payload)

@@ -49,6 +49,10 @@ public static class DependencyInjection
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<ISystemConfigurationService, SystemConfigurationService>();
         services.AddScoped<IStatisticsService, StatisticsService>();
+        services.AddScoped<IBenchmarkService, BenchmarkService>();
+
+        // MetricsCollector is a singleton — shares data across all requests for realtime benchmarks.
+        services.AddSingleton<MetricsCollector>();
 
         return services;
     }

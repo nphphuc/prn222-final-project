@@ -1,3 +1,5 @@
+using EduAI.Model.Entities;
+
 namespace EduAI.Model.IRepository;
 
 public interface IUnitOfWork
@@ -12,5 +14,6 @@ public interface IUnitOfWork
     IChatSessionRepository ChatSessions { get; }
     IChatMessageRepository ChatMessages { get; }
     IAuditLogRepository AuditLogs { get; }
+    IGenericRepository<SystemConfiguration> SystemConfigurations { get; }
     Task<int> SaveChangesAsync();
 }

@@ -14,15 +14,18 @@ public sealed class DocumentIndexingService : IDocumentIndexingService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IGeminiAiService _geminiAiService;
     private readonly INotificationService _notificationService;
+    private readonly ISystemConfigurationService _systemConfigurationService;
 
     public DocumentIndexingService(
         IUnitOfWork unitOfWork,
         IGeminiAiService geminiAiService,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        ISystemConfigurationService systemConfigurationService)
     {
         _unitOfWork = unitOfWork;
         _geminiAiService = geminiAiService;
         _notificationService = notificationService;
+        _systemConfigurationService = systemConfigurationService;
     }
 
     public async Task IndexAsync(int documentId, string? ipAddress, CancellationToken cancellationToken = default)
@@ -130,7 +133,14 @@ public sealed class DocumentIndexingService : IDocumentIndexingService
         if (string.IsNullOrWhiteSpace(text))
             throw new InvalidOperationException("No readable text was found in the uploaded file.");
 
-        var textChunks = DocumentTextExtractor.ChunkText(text);
+        // Use system configuration for chunking strategy, fall back to defaults
+        var config = await _systemConfigurationService.GetAsync();
+        var textChunks = DocumentTextExtractor.ChunkText(
+            text,
+            chunkSize: config.ChunkSize,
+            overlap: config.ChunkOverlap,
+            strategy: config.ChunkingStrategy);
+
         if (textChunks.Count == 0)
             throw new InvalidOperationException("Document text could not be split into chunks.");
 

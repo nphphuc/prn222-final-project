@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using EduAI.Model.Enums;
 using UglyToad.PdfPig;
 
 namespace EduAI.BusinessLogic.Helpers;
@@ -84,17 +85,50 @@ public static class DocumentTextExtractor
         return Normalize(builder.ToString());
     }
 
+    /// <summary>
+    /// Chunks text based on the specified strategy.
+    /// </summary>
+    /// <param name="text">Normalized text to chunk.</param>
+    /// <param name="chunkSize">Maximum characters per chunk (for CharacterCount and SizeBased).</param>
+    /// <param name="overlap">Overlap characters between chunks (CharacterCount only).</param>
+    /// <param name="strategy">The chunking strategy to use.</param>
     public static IReadOnlyList<string> ChunkText(
         string text,
         int chunkSize = DefaultChunkSize,
-        int overlap = DefaultOverlap)
+        int overlap = DefaultOverlap,
+        ChunkingStrategy strategy = ChunkingStrategy.CharacterCount)
     {
         text = Normalize(text);
         if (string.IsNullOrWhiteSpace(text))
             return Array.Empty<string>();
 
-        var paragraphs = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return strategy switch
+        {
+            ChunkingStrategy.Paragraph => ChunkByParagraph(text),
+            ChunkingStrategy.SizeBased => ChunkBySize(text, chunkSize),
+            _ => ChunkByCharacterCount(text, chunkSize, overlap)
+        };
+    }
+
+    /// <summary>
+    /// Splits text by paragraph boundaries (double newlines). Each paragraph becomes one chunk.
+    /// </summary>
+    private static IReadOnlyList<string> ChunkByParagraph(string text)
+    {
+        var paragraphs = text.Split(new[] { "\n\n" }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return paragraphs.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+    }
+
+    /// <summary>
+    /// Splits text into fixed-size chunks by character count with overlap.
+    /// </summary>
+    private static IReadOnlyList<string> ChunkByCharacterCount(string text, int chunkSize, int overlap)
+    {
+        if (text.Length <= chunkSize)
+            return [text];
+
         var chunks = new List<string>();
+        var paragraphs = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var current = new StringBuilder();
 
         foreach (var paragraph in paragraphs)
@@ -133,6 +167,44 @@ public static class DocumentTextExtractor
 
         if (current.Length > 0)
             chunks.Add(current.ToString());
+
+        return chunks.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
+    }
+
+    /// <summary>
+    /// Splits text into chunks by approximate size (measured in characters).
+    /// Unlike CharacterCount, this tries to break at sentence boundaries.
+    /// </summary>
+    private static IReadOnlyList<string> ChunkBySize(string text, int chunkSize)
+    {
+        if (text.Length <= chunkSize)
+            return [text];
+
+        var chunks = new List<string>();
+        var sentences = text.Split(new[] { ". ", "! ", "? ", ".\n", "!\n", "?\n" }, StringSplitOptions.None);
+        var current = new StringBuilder();
+
+        foreach (var sentence in sentences)
+        {
+            var trimmed = sentence.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+                continue;
+
+            var sentenceWithPunct = trimmed + (trimmed.EndsWith('.') || trimmed.EndsWith('!') || trimmed.EndsWith('?') ? "" : ". ");
+
+            if (current.Length + sentenceWithPunct.Length + 1 > chunkSize && current.Length > 0)
+            {
+                chunks.Add(current.ToString().TrimEnd());
+                current.Clear();
+            }
+
+            current.Append(sentenceWithPunct);
+            if (!sentenceWithPunct.EndsWith(' ') && !sentenceWithPunct.EndsWith('\n'))
+                current.Append(' ');
+        }
+
+        if (current.Length > 0)
+            chunks.Add(current.ToString().TrimEnd());
 
         return chunks.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
     }

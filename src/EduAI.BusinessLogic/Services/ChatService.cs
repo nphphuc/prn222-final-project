@@ -12,25 +12,28 @@ namespace EduAI.BusinessLogic.Services;
 
 public class ChatService : IChatService
 {
-    private const float MinCitationSimilarity = 0.55f;
+    private const float DefaultMinCitationSimilarity = 0.55f;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogService _auditLogService;
     private readonly IGeminiAiService _geminiAiService;
     private readonly ILogger<ChatService> _logger;
     private readonly INotificationService _notificationService;
+    private readonly ISystemConfigurationService _systemConfigurationService;
 
     public ChatService(
         IUnitOfWork unitOfWork,
         IAuditLogService auditLogService,
         IGeminiAiService geminiAiService,
         ILogger<ChatService> logger,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        ISystemConfigurationService systemConfigurationService)
     {
         _unitOfWork = unitOfWork;
         _auditLogService = auditLogService;
         _geminiAiService = geminiAiService;
         _logger = logger;
         _notificationService = notificationService;
+        _systemConfigurationService = systemConfigurationService;
     }
 
     public async Task<IReadOnlyList<ChatSessionDto>> GetSessionsAsync(string studentId)
@@ -317,17 +320,20 @@ public class ChatService : IChatService
                 return new ChatResponseDto { Success = true, Answer = noDataAnswer };
             }
 
+            var config = await _systemConfigurationService.GetAsync();
+            var minCitationSim = (float)config.CitationMinSimilarity;
+
             var maxRelevance = relevantChunks.Max(c => c.RelevanceScore);
             var context = string.Join("\n\n", relevantChunks.Select(c => c.Chunk.Content));
             var answer = await _geminiAiService.GenerateAnswerAsync(
                 dto.Question, context, subjectName, history);
 
             string? citationText = null;
-            if (maxRelevance >= MinCitationSimilarity)
+            if (config.CitationEnabled && maxRelevance >= minCitationSim)
             {
                 citationText = string.Join("; ",
                     relevantChunks
-                        .Where(c => c.RelevanceScore >= MinCitationSimilarity)
+                        .Where(c => c.RelevanceScore >= minCitationSim)
                         .Select(c => FormatCitation(c.Chunk))
                         .Distinct());
             }
@@ -630,8 +636,15 @@ public class ChatService : IChatService
 
     private sealed record RetrievedChunk(DocumentChunk Chunk, float RelevanceScore);
 
-    private async Task<IReadOnlyList<RetrievedChunk>> FindRelevantChunksAsync(int subjectId, string question, int topK = 5)
+    private async Task<int> GetTopKAsync()
     {
+        var config = await _systemConfigurationService.GetAsync();
+        return config.ChatTopK;
+    }
+
+    private async Task<IReadOnlyList<RetrievedChunk>> FindRelevantChunksAsync(int subjectId, string question)
+    {
+        var topK = await GetTopKAsync();
         var semanticMatches = await FindSemanticChunksAsync(subjectId, question, topK);
         if (semanticMatches.Count > 0)
             return semanticMatches;

@@ -1,3 +1,4 @@
+using EduAI.Model.Entities;
 using EduAI.Model.Repositories;
 using EduAI.Model.IRepository;
 
@@ -20,6 +21,7 @@ public class UnitOfWork : IUnitOfWork
         ChatSessions = new ChatSessionRepository(context);
         ChatMessages = new ChatMessageRepository(context);
         AuditLogs = new AuditLogRepository(context);
+        SystemConfigurations = new GenericRepository<SystemConfiguration>(context);
     }
 
     public ISubjectRepository Subjects { get; }
@@ -32,6 +34,7 @@ public class UnitOfWork : IUnitOfWork
     public IChatSessionRepository ChatSessions { get; }
     public IChatMessageRepository ChatMessages { get; }
     public IAuditLogRepository AuditLogs { get; }
+    public IGenericRepository<SystemConfiguration> SystemConfigurations { get; }
 
     public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
 }

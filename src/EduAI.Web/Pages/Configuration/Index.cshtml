@@ -1,0 +1,158 @@
+@page
+@model EduAI.Web.Pages.Configuration.IndexModel
+@{
+    ViewData["Title"] = "Cấu hình hệ thống";
+}
+
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Cấu hình hệ thống</h1>
+        <p class="page-subtitle">
+            Quản lý cài đặt chunking tài liệu và citation cho chatbot RAG.
+        </p>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ViewModel.SuccessMessage))
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @Model.ViewModel.SuccessMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Model.ViewModel.ErrorMessage))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @Model.ViewModel.ErrorMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<form method="post">
+    @* ── Chunking settings ─────────────────────────────────────── *@
+    <div class="panel-card mb-4">
+        <div class="panel-card-header">
+            <strong>@*Icon*@ &#128196; Cấu hình Chunking</strong>
+            <span class="text-muted">Cách tài liệu được chia thành các đoạn nhỏ để index.</span>
+        </div>
+        <div class="panel-card-body">
+            <div class="mb-3">
+                <label asp-for="Input.ChunkingStrategy" class="form-label">Chiến lược chunking</label>
+                <select asp-for="Input.ChunkingStrategy" class="form-select"
+                        asp-items="Model.StrategyOptions"></select>
+                <div class="form-text">
+                    <strong>Paragraph:</strong> Chia theo đoạn văn tự nhiên (giữ nguyên cấu trúc).<br />
+                    <strong>Character count:</strong> Chia theo số ký tự cố định (có overlap).<br />
+                    <strong>Size-based:</strong> Chia theo kích thước gần đúng.
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label asp-for="Input.ChunkSize" class="form-label">Kích thước chunk (ký tự)</label>
+                    <input asp-for="Input.ChunkSize" class="form-control" type="number" min="100" max="10000" />
+                    <span asp-validation-for="Input.ChunkSize" class="text-danger"></span>
+                    <div class="form-text">Số ký tự tối đa mỗi chunk. (100 – 10,000)</div>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Input.ChunkOverlap" class="form-label">Overlap (ký tự)</label>
+                    <input asp-for="Input.ChunkOverlap" class="form-control" type="number" min="0" max="1000" />
+                    <span asp-validation-for="Input.ChunkOverlap" class="text-danger"></span>
+                    <div class="form-text">Số ký tự chồng lấn giữa các chunk liền kề.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ── Citation settings ─────────────────────────────────────── *@
+    <div class="panel-card mb-4">
+        <div class="panel-card-header">
+            <strong>&#128200; Cấu hình Citation</strong>
+            <span class="text-muted">Kiểm soát cách chatbot trích nguồn tài liệu.</span>
+        </div>
+        <div class="panel-card-body">
+            <div class="mb-3 form-check form-switch">
+                <input asp-for="Input.CitationEnabled" class="form-check-input" role="switch" />
+                <label asp-for="Input.CitationEnabled" class="form-check-label">Bật trích nguồn (citation)</label>
+                <div class="form-text">Khi tắt, chatbot sẽ không hiển thị tham chiếu đến tài liệu nguồn.</div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label asp-for="Input.CitationMinSimilarity" class="form-label">Ngưỡng tương đồng tối thiểu</label>
+                    <div class="input-group">
+                        <input asp-for="Input.CitationMinSimilarity" class="form-control" type="number"
+                               step="0.01" min="0" max="1" />
+                        <span class="input-group-text">/ 1.0</span>
+                    </div>
+                    <span asp-validation-for="Input.CitationMinSimilarity" class="text-danger"></span>
+                    <div class="form-text">
+                        Điểm cosine similarity tối thiểu (0.0 – 1.0) để một chunk được trích dẫn.
+                        Cao hơn = chỉ trích dẫn khi rất liên quan.
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="Input.ChatTopK" class="form-label">Số chunk truy vấn (Top-K)</label>
+                    <input asp-for="Input.ChatTopK" class="form-control" type="number" min="1" max="50" />
+                    <span asp-validation-for="Input.ChatTopK" class="text-danger"></span>
+                    <div class="form-text">Số lượng chunk có độ tương đồng cao nhất được truy xuất mỗi câu hỏi.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ── Current values summary ────────────────────────────────── *@
+    <div class="panel-card mb-4">
+        <div class="panel-card-header">
+            <strong>&#128337; Trạng thái hiện tại</strong>
+        </div>
+        <div class="panel-card-body">
+            <table class="table table-sm mb-0" style="max-width:500px;">
+                <tbody>
+                    <tr>
+                        <td class="text-muted">Chiến lược chunking</td>
+                        <td><strong>@Model.ViewModel.Configuration.ChunkingStrategy</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Kích thước chunk</td>
+                        <td><strong>@Model.ViewModel.Configuration.ChunkSize</strong> ký tự</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Overlap</td>
+                        <td><strong>@Model.ViewModel.Configuration.ChunkOverlap</strong> ký tự</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Citation enabled</td>
+                        <td><strong>@(Model.ViewModel.Configuration.CitationEnabled ? "Bật" : "Tắt")</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Ngưỡng citation</td>
+                        <td><strong>@Model.ViewModel.Configuration.CitationMinSimilarity.ToString("F2")</strong> / 1.0</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Top-K chunks</td>
+                        <td><strong>@Model.ViewModel.Configuration.ChatTopK</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Cập nhật lần cuối</td>
+                        <td><strong>@(Model.ViewModel.Configuration.UpdatedAt?.ToString("g") ?? "—")</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Người cập nhật</td>
+                        <td><strong>@(Model.ViewModel.Configuration.UpdatedByUserName ?? "—")</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Lưu cấu hình</button>
+        <a asp-page="/Subjects/Index" class="btn btn-outline-secondary">Quay lại</a>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

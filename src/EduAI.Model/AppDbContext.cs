@@ -23,6 +23,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<SystemConfiguration> SystemConfigurations => Set<SystemConfiguration>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
